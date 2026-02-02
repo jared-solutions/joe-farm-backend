@@ -27,4 +27,7 @@ urlpatterns = [
     path('reports/egg-collection-table/', views.egg_collection_table, name='egg-collection-table'),
     path('reports/download/<str:report_type>/', views.download_report, name='download-report'),
     path('reports/download/egg-collection-table/', views.download_egg_collection_table, name='download-egg-collection-table'),
+    # Notification endpoints
+    path('notifications/egg-reminder/', views.check_egg_collection_reminder, name='egg-reminder'),
+    path('notifications/weekly-report/', views.weekly_profit_loss_report, name='weekly-report'),
 ]

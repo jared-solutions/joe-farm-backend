@@ -549,12 +549,22 @@ def egg_collection_table(request):
 @api_view(['GET', 'PUT', 'POST'])
 @permission_classes([IsAuthenticated])
 def chicken_count(request):
-    """Get and update total chicken count"""
+    """Get and update total chicken count and farm settings"""
     if request.user.role != 'owner':
         return Response({'detail': 'Access denied. Owner role required.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
-        # First try to get from FarmSettings, fallback to actual Chicken count
+        # Check if a specific key is requested
+        key = request.GET.get('key')
+        if key:
+            # Return specific setting
+            setting = FarmSettings.objects.filter(key=key).first()
+            if setting:
+                return Response({'key': key, 'value': setting.value})
+            else:
+                return Response({'key': key, 'value': None, 'detail': f'Setting {key} not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Return total chicken count (default behavior)
         setting = FarmSettings.objects.filter(key='total_chickens').first()
         if setting:
             total_chickens = int(setting.value)
@@ -1908,3 +1918,154 @@ def download_report(request, report_type):
     response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{report_type}_report_{start_date}_to_{end_date}.pdf"'
     return response
+
+
+# ============ NOTIFICATION ENDPOINTS ============
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_egg_collection_reminder(request):
+    """
+    Check if egg collection was recorded today.
+    Returns a reminder notification if not recorded.
+    Timezone: Africa/Nairobi (UTC+3)
+    """
+    if request.user.role != 'owner':
+        return Response({'detail': 'Access denied. Owner role required.'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Get today's date in Nairobi timezone
+    today = datetime.now().date()
+    
+    # Check if any eggs were recorded today
+    eggs_recorded = Egg.objects.filter(
+        laid_date=today,
+        recorded_by=request.user
+    ).exists()
+    
+    if eggs_recorded:
+        return Response({
+            'needs_reminder': False,
+            'message': 'Egg collection already recorded for today',
+            'date': str(today)
+        })
+    else:
+        return Response({
+            'needs_reminder': True,
+            'message': '⚠️ Reminder: Egg collection has not been recorded for today. Please record it before end of day.',
+            'date': str(today),
+            'reminder_type': 'daily_egg_collection'
+        })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def weekly_profit_loss_report(request):
+    """
+    Generate weekly profit/loss report for notifications.
+    Returns summary of revenue, expenses, and profit/loss for the past week.
+    """
+    if request.user.role != 'owner':
+        return Response({'detail': 'Access denied. Owner role required.'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Calculate date range (last 7 days, ending yesterday)
+    today = datetime.now().date()
+    week_end = today - timedelta(days=1)  # Yesterday
+    week_start = week_end - timedelta(days=6)  # 7 days ago
+    
+    # Calculate revenue from sales
+    weekly_sales = Sale.objects.filter(date__gte=week_start, date__lte=week_end)
+    total_revenue = weekly_sales.aggregate(total=Sum('total_amount'))['total'] or 0
+    trays_sold = weekly_sales.aggregate(total=Sum('trays_sold'))['total'] or 0
+    
+    # Calculate operating expenses
+    # 1. Feed consumption costs
+    weekly_feed_consumption = FeedConsumption.objects.filter(date__gte=week_start, date__lte=week_end)
+    total_feed_used_kg = weekly_feed_consumption.aggregate(total=Sum('quantity_used_kg'))['total'] or 0
+    
+    feed_cost_this_week = 0
+    if total_feed_used_kg > 0:
+        feed_purchases = FeedPurchase.objects.filter(date__gte=week_start - timedelta(days=90), date__lte=week_end)
+        if feed_purchases.exists():
+            total_cost = 0
+            total_qty = 0
+            for purchase in feed_purchases:
+                if purchase.quantity_kg and purchase.total_cost:
+                    total_cost += purchase.total_cost
+                    total_qty += purchase.quantity_kg
+            if total_qty > 0:
+                avg_cost_per_kg = total_cost / total_qty
+                feed_cost_this_week = total_feed_used_kg * avg_cost_per_kg
+    
+    # 2. Other operating expenses
+    weekly_expenses = Expense.objects.filter(
+        date__gte=week_start,
+        date__lte=week_end
+    ).exclude(expense_type='feed')
+    other_expenses = weekly_expenses.aggregate(total=Sum('amount'))['total'] or 0
+    
+    # Total operating costs
+    total_operating_costs = feed_cost_this_week + other_expenses
+    
+    # Capital expenses (feed purchases)
+    weekly_feed_purchases = FeedPurchase.objects.filter(date__gte=week_start, date__lte=week_end)
+    capital_expenses = weekly_feed_purchases.aggregate(total=Sum('total_cost'))['total'] or 0
+    
+    # Profit/Loss (revenue - operating costs)
+    profit_loss = total_revenue - total_operating_costs
+    profit_margin = (profit_loss / total_revenue * 100) if total_revenue > 0 else 0
+    
+    # Egg collection for the week
+    weekly_eggs = Egg.objects.filter(
+        laid_date__gte=week_start,
+        laid_date__lte=week_end
+    ).count()
+    
+    # Determine status
+    if profit_loss > 0:
+        status = 'PROFIT'
+        emoji = '📈'
+    elif profit_loss < 0:
+        status = 'LOSS'
+        emoji = '📉'
+    else:
+        status = 'BREAK-EVEN'
+        emoji = '➖'
+    
+    # Format message for notification
+    message = f"""📊 WEEKLY REPORT ({week_start} to {week_end})
+
+{emoji} STATUS: {status}
+💰 Revenue: Ksh {total_revenue:,.2f}
+🐔 Eggs Collected: {weekly_eggs} eggs
+📦 Trays Sold: {trays_sold}
+
+💸 EXPENSES:
+• Feed Consumption: Ksh {feed_cost_this_week:,.2f}
+• Other: Ksh {other_expenses:,.2f}
+• Total Operating: Ksh {total_operating_costs:,.2f}
+
+📌 CAPITAL (Feed Purchases): Ksh {capital_expenses:,.2f}
+
+🏁 NET PROFIT/LOSS: Ksh {profit_loss:,.2f} ({profit_margin:.1f}% margin)
+"""
+    
+    return Response({
+        'date_range': {
+            'start': str(week_start),
+            'end': str(week_end)
+        },
+        'eggs_collected': weekly_eggs,
+        'trays_sold': trays_sold,
+        'revenue': round(total_revenue, 2),
+        'expenses': {
+            'feed_consumption': round(feed_cost_this_week, 2),
+            'other': round(other_expenses, 2),
+            'total_operating': round(total_operating_costs, 2),
+            'capital': round(capital_expenses, 2)
+        },
+        'profit_loss': round(profit_loss, 2),
+        'profit_margin': round(profit_margin, 2),
+        'status': status,
+        'message': message,
+        'notification_type': 'weekly_report'
+    })
