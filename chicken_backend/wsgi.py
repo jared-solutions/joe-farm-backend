@@ -14,15 +14,22 @@ from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'chicken_backend.settings')
 
-# Run migrations automatically on startup (for Render free tier)
+# Run migrations and collectstatic automatically on startup (for Render free tier)
 if os.environ.get('RUN_MIGRATIONS', 'True').lower() in ('true', '1', 'yes'):
     from django.core.management import execute_from_command_line
-    # Only run migrate, not makemigrations (migrations should be committed)
+    # Run migrate
     try:
         print("Running database migrations...")
         execute_from_command_line(['manage.py', 'migrate', '--noinput'])
         print("Migrations completed successfully!")
     except Exception as e:
         print(f"Migration warning: {e}")
+    # Collect static files
+    try:
+        print("Collecting static files...")
+        execute_from_command_line(['manage.py', 'collectstatic', '--noinput'])
+        print("Static files collected successfully!")
+    except Exception as e:
+        print(f"Static files warning: {e}")
 
 application = get_wsgi_application()
