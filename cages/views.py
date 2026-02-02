@@ -201,7 +201,13 @@ def dashboard_overview(request):
 
     # Get the total chicken count from settings or database
     chicken_setting = FarmSettings.objects.filter(key='total_chickens').first()
-    total_chickens = int(chicken_setting.value) if chicken_setting else Chicken.objects.filter(cage__user=request.user).count()
+    if chicken_setting:
+        try:
+            total_chickens = int(chicken_setting.value)
+        except (ValueError, TypeError):
+            total_chickens = Chicken.objects.filter(cage__user=request.user).count()
+    else:
+        total_chickens = Chicken.objects.filter(cage__user=request.user).count()
 
     # Calculate egg production metrics with detailed breakdown
     today = datetime.now().date()
@@ -721,11 +727,23 @@ def financial_summary(request):
 
     # Get chicken count from FarmSettings
     chicken_setting = FarmSettings.objects.filter(key='total_chickens').first()
-    total_chickens = int(chicken_setting.value) if chicken_setting else Chicken.objects.count()
+    if chicken_setting:
+        try:
+            total_chickens = int(chicken_setting.value)
+        except (ValueError, TypeError):
+            total_chickens = 0
+    else:
+        total_chickens = 0
 
     # Get feed consumption rate
     feed_setting = FarmSettings.objects.filter(key='feed_per_chicken_daily_kg').first()
-    feed_per_chicken_daily = float(feed_setting.value) if feed_setting else 0.12
+    if feed_setting:
+        try:
+            feed_per_chicken_daily = float(feed_setting.value)
+        except (ValueError, TypeError):
+            feed_per_chicken_daily = 0.12
+    else:
+        feed_per_chicken_daily = 0.12
 
     # Calculate revenue from sales (all sales for the week)
     weekly_sales = Sale.objects.filter(date__gte=week_start, date__lte=week_end)
