@@ -591,46 +591,39 @@ def egg_collection_table(request):
         
         boxes_per_partition = 32 if is_combined else 16
         
-        # Front partition (partition_index 0)
+        # Front partition (partition_index 0) - only include boxes with data
         front_data = cage_data.get(cage_id, {}).get(0, {})
-        if is_combined:
-            # For combined cage: 4 rows x 8 cols = 32 boxes
-            # Data stored by box_number (1-8), need to repeat for each row
+        if isinstance(front_data, dict):
+            # Get all box numbers that have data
+            front_box_numbers = sorted([int(k) for k in front_data.keys() if k.isdigit()])
+            # Get max box number to determine rows
+            max_box = max(front_box_numbers) if front_box_numbers else 0
+            boxes_per_row = 8 if max_box > 4 else 4
+            # Create 4 rows
             for row in range(4):
-                for box_num in range(1, 9):  # 8 boxes per row
-                    count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
+                for box_num in range(1, boxes_per_row + 1):
+                    count = front_data.get(str(box_num), 0)
                     cage_info['front_partition'].append({
                         'box': box_num,
                         'eggs': count
                     })
-        else:
-            # For standard cage: 4 rows x 4 cols = 16 boxes
-            for box_num in range(1, 17):
-                count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
-                cage_info['front_partition'].append({
-                    'box': box_num,
-                    'eggs': count
-                })
-
-        # Back partition (partition_index 1)
+        
+        # Back partition (partition_index 1) - only include boxes with data
         back_data = cage_data.get(cage_id, {}).get(1, {})
-        if is_combined:
-            # For combined cage: 4 rows x 8 cols = 32 boxes
+        if isinstance(back_data, dict):
+            # Get all box numbers that have data
+            back_box_numbers = sorted([int(k) for k in back_data.keys() if k.isdigit()])
+            # Get max box number to determine rows
+            max_box = max(back_box_numbers) if back_box_numbers else 0
+            boxes_per_row = 8 if max_box > 4 else 4
+            # Create 4 rows
             for row in range(4):
-                for box_num in range(1, 9):  # 8 boxes per row
-                    count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
+                for box_num in range(1, boxes_per_row + 1):
+                    count = back_data.get(str(box_num), 0)
                     cage_info['back_partition'].append({
                         'box': box_num,
                         'eggs': count
                     })
-        else:
-            # For standard cage: 4 rows x 4 cols = 16 boxes
-            for box_num in range(1, 17):
-                count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
-                cage_info['back_partition'].append({
-                    'box': box_num,
-                    'eggs': count
-                })
 
         cage_info['cage_total'] = sum(p['eggs'] for p in cage_info['front_partition']) + sum(p['eggs'] for p in cage_info['back_partition'])
         table_data['cages'].append(cage_info)
