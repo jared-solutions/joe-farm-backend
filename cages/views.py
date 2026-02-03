@@ -2163,6 +2163,39 @@ def notifications_list(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def delete_data_by_date(request):
+    """
+    Delete egg data for a specific date (for testing purposes).
+    """
+    if request.user.role != 'owner':
+        return Response({'detail': 'Access denied. Owner role required.'}, status=status.HTTP_403_FORBIDDEN)
+    
+    target_date = request.data.get('date')
+    if not target_date:
+        return Response({'detail': 'Date is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Parse the date
+        from datetime import datetime
+        delete_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+        
+        # Delete eggs for this date
+        deleted_eggs = Egg.objects.filter(laid_date=delete_date).delete()
+        
+        # Reset store trays to 0
+        Store.objects.all().delete()
+        Store.objects.create(id=1, trays_in_stock=0)
+        
+        return Response({
+            'message': f'Deleted all data for {target_date}',
+            'eggs_deleted': deleted_eggs[0]
+        })
+    except ValueError:
+        return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def mark_notification_read(request, notification_id):
     """
     Mark a specific notification as read.

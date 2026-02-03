@@ -35,4 +35,6 @@ urlpatterns = [
     path('notifications/unread-count/', views.unread_notification_count, name='unread-notification-count'),
     path('notifications/mark-read/<int:notification_id>/', views.mark_notification_read, name='mark-notification-read'),
     path('notifications/mark-all-read/', views.mark_all_notifications_read, name='mark-all-notifications-read'),
+    # Data management endpoints
+    path('data/delete-by-date/', views.delete_data_by_date, name='delete-data-by-date'),
 ]
