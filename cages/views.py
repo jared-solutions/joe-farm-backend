@@ -562,7 +562,7 @@ def egg_collection_table(request):
 
     # Convert cage data to match frontend structure exactly
     # Get actual cages from database
-    user_cages = Cage.objects.filter(user=request.user).values_list('id', flat=True)
+    user_cages = list(Cage.objects.filter(user=request.user).values_list('id', flat=True))
     if not user_cages:
         # If no cages exist, use default cages 1 and 2 for display purposes
         user_cages = [1, 2]
