@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('authentication', '0005_alter_user_managers'),
-        ('cages', '0005_alter_medicalrecord_options'),
+        ('cages', '0007_expense_recorded_by_medicalrecord'),
     ]
 
     operations = [
