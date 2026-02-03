@@ -404,9 +404,6 @@ def dashboard_overview(request):
 @permission_classes([IsAuthenticated])
 def egg_collection_table(request):
     """Generate egg collection table data for PDF/Excel export"""
-    if request.user.role != 'owner':
-        return Response({'detail': 'Access denied. Owner role required.'}, status=status.HTTP_403_FORBIDDEN)
-
     # Get date from query params, default to today
     collection_date = request.GET.get('date', datetime.now().date())
 
