@@ -594,15 +594,15 @@ def egg_collection_table(request):
         # Front partition (partition_index 0) - only include boxes with data
         front_data = cage_data.get(cage_id, {}).get(0, {})
         if isinstance(front_data, dict):
-            # Get all box numbers that have data
-            front_box_numbers = sorted([int(k) for k in front_data.keys() if k.isdigit()])
+            # Get all box numbers that have data (keys can be int or str)
+            front_box_numbers = sorted([int(k) for k in front_data.keys() if str(k).isdigit() or isinstance(k, int)])
             # Get max box number to determine rows
             max_box = max(front_box_numbers) if front_box_numbers else 0
             boxes_per_row = 8 if max_box > 4 else 4
             # Create 4 rows
             for row in range(4):
                 for box_num in range(1, boxes_per_row + 1):
-                    count = front_data.get(str(box_num), 0)
+                    count = front_data.get(str(box_num), front_data.get(box_num, 0))
                     cage_info['front_partition'].append({
                         'box': box_num,
                         'eggs': count
@@ -611,15 +611,15 @@ def egg_collection_table(request):
         # Back partition (partition_index 1) - only include boxes with data
         back_data = cage_data.get(cage_id, {}).get(1, {})
         if isinstance(back_data, dict):
-            # Get all box numbers that have data
-            back_box_numbers = sorted([int(k) for k in back_data.keys() if k.isdigit()])
+            # Get all box numbers that have data (keys can be int or str)
+            back_box_numbers = sorted([int(k) for k in back_data.keys() if str(k).isdigit() or isinstance(k, int)])
             # Get max box number to determine rows
             max_box = max(back_box_numbers) if back_box_numbers else 0
             boxes_per_row = 8 if max_box > 4 else 4
             # Create 4 rows
             for row in range(4):
                 for box_num in range(1, boxes_per_row + 1):
-                    count = back_data.get(str(box_num), 0)
+                    count = back_data.get(str(box_num), back_data.get(box_num, 0))
                     cage_info['back_partition'].append({
                         'box': box_num,
                         'eggs': count
