@@ -140,11 +140,10 @@ class EggViewSet(viewsets.ModelViewSet):
                     partition_index = partition.get('partitionIndex')
                     eggs_collected = partition.get('eggsCollected', [])
                     comments = partition.get('comments', '')
-                    total_eggs_collected += len(eggs_collected)
-
-                    # For each egg collected, create an egg record with detailed tracking
+                    
+                    # Group eggs by box to avoid duplicate records
+                    box_eggs = {}
                     for egg_data in eggs_collected:
-                        # Extract box number and count from egg data
                         box_number = None
                         egg_count = 1
 
@@ -159,19 +158,25 @@ class EggViewSet(viewsets.ModelViewSet):
                             elif 'count' in egg_data:
                                 egg_count = egg_data['count']
 
-                        # Create individual egg records for each count in this box
-                        for _ in range(egg_count):
-                            Egg.objects.create(
-                                chicken=None,  # Eggs collected from cages, not tied to specific chickens
-                                laid_date=collection_date,
-                                weight_g=0.0,  # Weight measured separately if needed
-                                quality='Good',  # Quality assessment done during collection
-                                source='cage',
-                                cage_id=cage_id,
-                                partition_index=partition_index - 1,  # Convert to 0-based indexing for storage
-                                box_number=box_number,
-                                recorded_by=request.user
-                            )
+                        # Store the count for this box (don't create individual records)
+                        if box_number:
+                            box_eggs[box_number] = egg_count
+                            total_eggs_collected += egg_count
+
+                    # Create ONE egg record per box with the count stored in metadata
+                    for box_number, egg_count in box_eggs.items():
+                        Egg.objects.create(
+                            chicken=None,
+                            laid_date=collection_date,
+                            weight_g=0.0,
+                            quality='Good',
+                            source='cage',
+                            cage_id=cage_id,
+                            partition_index=partition_index - 1,
+                            box_number=box_number,
+                            recorded_by=request.user,
+                            metadata={'egg_count': egg_count}  # Store count in metadata
+                        )
 
             # Convert eggs to trays for storage (30 eggs per tray)
             trays_to_add = total_eggs_collected // 30
@@ -526,10 +531,12 @@ def egg_collection_table(request):
             if partition not in cage_data[cage_id]:
                 cage_data[cage_id][partition] = {}
 
-            if box not in cage_data[cage_id][partition]:
-                cage_data[cage_id][partition][box] = 0
-
-            cage_data[cage_id][partition][box] += 1
+            # Read count from metadata (new format) or count records (old format)
+            egg_count = 1
+            if egg.metadata and isinstance(egg.metadata, dict) and 'egg_count' in egg.metadata:
+                egg_count = egg.metadata['egg_count']
+            
+            cage_data[cage_id][partition][box] = egg_count
 
     # Format data for table display - exact frontend structure
     table_data = {
