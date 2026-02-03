@@ -462,12 +462,8 @@ def egg_collection_table(request):
             return Response({'detail': 'Invalid date format. Use YYYY-MM-DD.'}, status=status.HTTP_400_BAD_REQUEST)
 
     # Get actual egg data from database for the specified date
-    eggs = Egg.objects.filter(
-        laid_date=collection_date
-    ).filter(
-        # Include eggs from user's chickens or eggs recorded by this user
-        Q(chicken__cage__user=request.user) | Q(recorded_by=request.user)
-    )
+    # Include ALL eggs for this date (no user filter - all farm eggs are visible)
+    eggs = Egg.objects.filter(laid_date=collection_date)
 
     # Calculate laying percentage and performance comments
     chicken_setting = FarmSettings.objects.filter(key='total_chickens').first()
