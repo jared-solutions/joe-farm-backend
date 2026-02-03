@@ -553,6 +553,7 @@ def egg_collection_table(request):
         # Data is stored with partition_index (0=front, 1=back)
 
         # Front partition (partition_index 0)
+        # Frontend expects 16 cells (4 rows x 4 cols) for standard cage, 32 cells (4 rows x 8 cols) for combined
         front_data = cage_data.get(cage_id, {}).get(0, {})
         for box_num in range(1, 17):  # 16 boxes (4x4 grid)
             count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
