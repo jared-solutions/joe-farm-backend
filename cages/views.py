@@ -282,10 +282,18 @@ def dashboard_overview(request):
         total = 0
         for egg in eggs_queryset:
             if egg.metadata:
-                # Metadata contains box values like {"1": 3, "2": 4, ...}
-                for box, count in egg.metadata.items():
-                    if isinstance(count, (int, float)):
-                        total += int(count)
+                # Check if metadata has 'egg_count' key (new format)
+                if isinstance(egg.metadata, dict):
+                    if 'egg_count' in egg.metadata:
+                        # New format: {'egg_count': 4}
+                        count = egg.metadata['egg_count']
+                        if isinstance(count, (int, float)):
+                            total += int(count)
+                    else:
+                        # Old format: iterate over box values
+                        for box, count in egg.metadata.items():
+                            if isinstance(count, (int, float)):
+                                total += int(count)
         return total
 
     # Filter by source and count from metadata
