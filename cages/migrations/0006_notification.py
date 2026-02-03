@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('authentication', '0005_alter_user_managers'),
+        ('authentication', '0004_user_is_approved_created_at'),
         ('cages', '0007_expense_recorded_by_medicalrecord'),
     ]
 
