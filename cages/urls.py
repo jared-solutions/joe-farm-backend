@@ -30,4 +30,9 @@ urlpatterns = [
     # Notification endpoints
     path('notifications/egg-reminder/', views.check_egg_collection_reminder, name='egg-reminder'),
     path('notifications/weekly-report/', views.weekly_profit_loss_report, name='weekly-report'),
+    # Notification API endpoints
+    path('notifications/', views.notifications_list, name='notifications-list'),
+    path('notifications/unread-count/', views.unread_notification_count, name='unread-notification-count'),
+    path('notifications/mark-read/<int:notification_id>/', views.mark_notification_read, name='mark-notification-read'),
+    path('notifications/mark-all-read/', views.mark_all_notifications_read, name='mark-all-notifications-read'),
 ]

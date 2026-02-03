@@ -13,8 +13,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from io import BytesIO
-from .models import Cage, Chicken, Egg, Store, FeedPurchase, FeedConsumption, Sale, Expense, FarmSettings, MedicalRecord
-from .serializers import CageSerializer, ChickenSerializer, EggSerializer
+from .models import Cage, Chicken, Egg, Store, FeedPurchase, FeedConsumption, Sale, Expense, FarmSettings, MedicalRecord, Notification
+from .serializers import CageSerializer, ChickenSerializer, EggSerializer, NotificationSerializer
 
 class CageViewSet(viewsets.ModelViewSet):
     serializer_class = CageSerializer
@@ -182,7 +182,47 @@ class EggViewSet(viewsets.ModelViewSet):
             
             print(f"DEBUG: Submission successful, trays added: {trays_to_add}")
             
-            return Response({'message': f'Daily collection submitted successfully. Added {trays_to_add} trays to store.'}, status=status.HTTP_201_CREATED)
+            # Calculate cage eggs (total - shade eggs)
+            cage_eggs = total_eggs_collected - shade_eggs
+            
+            # Send notification to owner
+            from authentication.models import User
+            recorder_name = request.user.username or request.user.email or 'A team member'
+            
+            # Find the owner(s) for this farm and send notifications
+            # If the current user is the owner, send notification to themselves
+            # If the current user is a worker, send notification to the owner
+            if request.user.role == 'owner':
+                # User is owner, send notification to themselves
+                send_egg_collection_notification(
+                    owner=request.user,
+                    collection_date=collection_date,
+                    recorder_name=recorder_name,
+                    total_eggs=total_eggs_collected,
+                    cage_eggs=cage_eggs,
+                    shade_eggs=shade_eggs
+                )
+            else:
+                # User is a worker, find the owner and notify them
+                # Get owner(s) from cages (the user who owns the cages)
+                owners = User.objects.filter(role='owner')
+                for owner in owners:
+                    send_egg_collection_notification(
+                        owner=owner,
+                        collection_date=collection_date,
+                        recorder_name=recorder_name,
+                        total_eggs=total_eggs_collected,
+                        cage_eggs=cage_eggs,
+                        shade_eggs=shade_eggs
+                    )
+            
+            return Response({
+                'message': f'Daily collection submitted successfully. Added {trays_to_add} trays to store.',
+                'total_eggs': total_eggs_collected,
+                'shade_eggs': shade_eggs,
+                'cage_eggs': cage_eggs,
+                'trays_added': trays_to_add
+            }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
         
@@ -2066,3 +2106,174 @@ def weekly_profit_loss_report(request):
         'message': message,
         'notification_type': 'weekly_report'
     })
+
+
+# ============ NOTIFICATION API ENDPOINTS ============
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def notifications_list(request):
+    """
+    Get list of notifications for the current user.
+    Optionally filter by read/unread status.
+    """
+    user = request.user
+    
+    # Get query params
+    unread_only = request.GET.get('unread_only', 'false').lower() == 'true'
+    limit = request.GET.get('limit', 50)
+    
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 50
+    
+    queryset = Notification.objects.filter(user=user)
+    
+    if unread_only:
+        queryset = queryset.filter(is_read=False)
+    
+    # Get total count and unread count
+    total_count = queryset.count()
+    unread_count = queryset.filter(is_read=False).count()
+    
+    # Order by created_at descending and apply limit
+    notifications = queryset.order_by('-created_at')[:limit]
+    
+    data = {
+        'notifications': list(notifications.values(
+            'id', 'notification_type', 'title', 'message', 
+            'is_read', 'created_at', 'metadata'
+        )),
+        'total_count': total_count,
+        'unread_count': unread_count
+    }
+    
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_notification_read(request, notification_id):
+    """
+    Mark a specific notification as read.
+    """
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+        notification.is_read = True
+        notification.save()
+        return Response({
+            'message': 'Notification marked as read',
+            'notification_id': notification_id
+        })
+    except Notification.DoesNotExist:
+        return Response(
+            {'detail': 'Notification not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_all_notifications_read(request):
+    """
+    Mark all notifications as read for the current user.
+    """
+    updated_count = Notification.objects.filter(
+        user=request.user, 
+        is_read=False
+    ).update(is_read=True)
+    
+    return Response({
+        'message': f'{updated_count} notifications marked as read',
+        'updated_count': updated_count
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def unread_notification_count(request):
+    """
+    Get the count of unread notifications for the current user.
+    """
+    unread_count = Notification.objects.filter(
+        user=request.user, 
+        is_read=False
+    ).count()
+    
+    return Response({'unread_count': unread_count})
+
+
+def send_notification_to_owner(owner, notification_type, title, message, metadata=None):
+    """
+    Helper function to send a notification to a farm owner.
+    
+    Args:
+        owner: The User model instance (owner)
+        notification_type: Type of notification (e.g., 'egg_collection')
+        title: Notification title
+        message: Notification message
+        metadata: Optional dict with additional data
+    """
+    if owner and owner.role == 'owner':
+        Notification.objects.create(
+            user=owner,
+            notification_type=notification_type,
+            title=title,
+            message=message,
+            metadata=metadata or {}
+        )
+        return True
+    return False
+
+
+def send_egg_collection_notification(owner, collection_date, recorder_name, total_eggs, cage_eggs, shade_eggs):
+    """
+    Send notification to owner when egg collection is recorded.
+    
+    Args:
+        owner: The User model instance (owner)
+        collection_date: Date of collection
+        recorder_name: Name of person who recorded the data
+        total_eggs: Total eggs collected
+        cage_eggs: Eggs from cages
+        shade_eggs: Eggs from shade
+    """
+    from django.utils import timezone
+    now = timezone.now()
+    collection_time = now.strftime('%I:%M %p')  # Format: 02:30 PM
+    
+    title = f"🥚 Egg Collection Recorded - {collection_date}"
+    message = f"""
+{recorder_name} has recorded today's egg collection.
+
+⏰ Time Recorded: {collection_time}
+📅 Date: {collection_date}
+
+📊 Summary:
+• Total Eggs: {total_eggs}
+• Cage Eggs: {cage_eggs}
+• Shade Eggs: {shade_eggs}
+• Trays: {total_eggs // 30} full + {total_eggs % 30} remaining
+
+View details in the Recorded Data section.
+"""
+    
+    metadata = {
+        'collection_date': str(collection_date),
+        'collection_time': collection_time,
+        'recorded_at': now.isoformat(),
+        'recorder_name': recorder_name,
+        'total_eggs': total_eggs,
+        'cage_eggs': cage_eggs,
+        'shade_eggs': shade_eggs,
+        'trays': total_eggs // 30
+    }
+    
+    return send_notification_to_owner(
+        owner=owner,
+        notification_type='egg_collection',
+        title=title,
+        message=message,
+        metadata=metadata
+    )

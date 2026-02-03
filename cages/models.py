@@ -153,3 +153,26 @@ class FarmSettings(models.Model):
 
     def __str__(self):
         return f"{self.key}: {self.value}"
+
+
+class Notification(models.Model):
+    """Notifications for farm owners"""
+    NOTIFICATION_TYPES = [
+        ('egg_collection', 'Egg Collection'),
+        ('expense', 'Expense Recorded'),
+        ('system', 'System Notification'),
+    ]
+    
+    user = models.ForeignKey('authentication.User', on_delete=models.CASCADE, related_name='notifications')
+    notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    metadata = models.JSONField(default=dict, blank=True)  # Store additional data like date, counts, etc.
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} - {self.user.username}"
