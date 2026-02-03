@@ -269,19 +269,15 @@ def dashboard_overview(request):
     for cage_id in [1, 2]:  # Standard farm has 2 cages
         cage_eggs = today_eggs.filter(cage_id=cage_id, source='cage')
 
-        # Count eggs in each partition (4 partitions: 0, 1, 2, 3)
+        # Count eggs in each partition (2 partitions: 0=front, 1=back)
         front_eggs = cage_eggs.filter(partition_index=0).count()  # Front partition
-        middle1_eggs = cage_eggs.filter(partition_index=1).count()  # Middle1 partition
-        middle2_eggs = cage_eggs.filter(partition_index=2).count()  # Middle2 partition
-        back_eggs = cage_eggs.filter(partition_index=3).count()   # Back partition
-        total_cage_eggs = front_eggs + middle1_eggs + middle2_eggs + back_eggs
+        back_eggs = cage_eggs.filter(partition_index=1).count()   # Back partition
+        total_cage_eggs = front_eggs + back_eggs
 
         if total_cage_eggs > 0:
             cage_breakdown[cage_id] = {
                 'total': total_cage_eggs,
                 'front': front_eggs,
-                'middle1': middle1_eggs,
-                'middle2': middle2_eggs,
                 'back': back_eggs
             }
 
@@ -556,14 +552,12 @@ def egg_collection_table(request):
         cage_info = {
             'cage_id': cage_id,
             'front_partition': [],
-            'middle1_partition': [],
-            'middle2_partition': [],
             'back_partition': []
         }
 
-        # Frontend structure: each cage has 4 partitions (front, middle1, middle2, back)
+        # Frontend structure: each cage has front and back partitions
         # Each partition has 4 rows x 4 columns = 16 boxes total
-        # Data is stored with partition_index (0=front, 1=middle1, 2=middle2, 3=back)
+        # Data is stored with partition_index (0=front, 1=back)
 
         # Front partition (partition_index 0)
         front_data = cage_data.get(cage_id, {}).get(0, {})
@@ -574,26 +568,8 @@ def egg_collection_table(request):
                 'eggs': count
             })
 
-        # Middle1 partition (partition_index 1)
-        middle1_data = cage_data.get(cage_id, {}).get(1, {})
-        for box_num in range(1, 17):  # 16 boxes (4x4 grid)
-            count = middle1_data.get(box_num, 0) if isinstance(middle1_data, dict) else 0
-            cage_info['middle1_partition'].append({
-                'box': box_num,
-                'eggs': count
-            })
-
-        # Middle2 partition (partition_index 2)
-        middle2_data = cage_data.get(cage_id, {}).get(2, {})
-        for box_num in range(1, 17):  # 16 boxes (4x4 grid)
-            count = middle2_data.get(box_num, 0) if isinstance(middle2_data, dict) else 0
-            cage_info['middle2_partition'].append({
-                'box': box_num,
-                'eggs': count
-            })
-
-        # Back partition (partition_index 3)
-        back_data = cage_data.get(cage_id, {}).get(3, {})
+        # Back partition (partition_index 1)
+        back_data = cage_data.get(cage_id, {}).get(1, {})
         for box_num in range(1, 17):  # 16 boxes (4x4 grid)
             count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
             cage_info['back_partition'].append({
@@ -601,10 +577,7 @@ def egg_collection_table(request):
                 'eggs': count
             })
 
-        cage_info['cage_total'] = sum(p['eggs'] for p in cage_info['front_partition']) + \
-                                  sum(p['eggs'] for p in cage_info['middle1_partition']) + \
-                                  sum(p['eggs'] for p in cage_info['middle2_partition']) + \
-                                  sum(p['eggs'] for p in cage_info['back_partition'])
+        cage_info['cage_total'] = sum(p['eggs'] for p in cage_info['front_partition']) + sum(p['eggs'] for p in cage_info['back_partition'])
         table_data['cages'].append(cage_info)
 
     table_data['cage_total'] = sum(c['cage_total'] for c in table_data['cages'])
