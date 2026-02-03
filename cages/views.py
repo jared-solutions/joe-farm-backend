@@ -549,27 +549,59 @@ def egg_collection_table(request):
         }
 
         # Frontend structure: each cage has front and back partitions
-        # Each partition has 4 rows x 4 columns = 16 boxes total
+        # Standard cage: 4 rows x 4 columns = 16 boxes total
+        # Combined cage (cage_id=2): 4 rows x 8 columns = 32 boxes total
         # Data is stored with partition_index (0=front, 1=back)
-
+        
+        # Get cage type from database
+        try:
+            cage_obj = Cage.objects.get(id=cage_id)
+            is_combined = cage_obj.type == 'combined'
+        except Cage.DoesNotExist:
+            is_combined = (cage_id == 2)  # Assume cage 2 is combined
+        
+        boxes_per_partition = 32 if is_combined else 16
+        
         # Front partition (partition_index 0)
-        # Frontend expects 16 cells (4 rows x 4 cols) for standard cage, 32 cells (4 rows x 8 cols) for combined
         front_data = cage_data.get(cage_id, {}).get(0, {})
-        for box_num in range(1, 17):  # 16 boxes (4x4 grid)
-            count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
-            cage_info['front_partition'].append({
-                'box': box_num,
-                'eggs': count
-            })
+        if is_combined:
+            # For combined cage: 4 rows x 8 cols = 32 boxes
+            # Data stored by box_number (1-8), need to repeat for each row
+            for row in range(4):
+                for box_num in range(1, 9):  # 8 boxes per row
+                    count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
+                    cage_info['front_partition'].append({
+                        'box': box_num,
+                        'eggs': count
+                    })
+        else:
+            # For standard cage: 4 rows x 4 cols = 16 boxes
+            for box_num in range(1, 17):
+                count = front_data.get(box_num, 0) if isinstance(front_data, dict) else 0
+                cage_info['front_partition'].append({
+                    'box': box_num,
+                    'eggs': count
+                })
 
         # Back partition (partition_index 1)
         back_data = cage_data.get(cage_id, {}).get(1, {})
-        for box_num in range(1, 17):  # 16 boxes (4x4 grid)
-            count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
-            cage_info['back_partition'].append({
-                'box': box_num,
-                'eggs': count
-            })
+        if is_combined:
+            # For combined cage: 4 rows x 8 cols = 32 boxes
+            for row in range(4):
+                for box_num in range(1, 9):  # 8 boxes per row
+                    count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
+                    cage_info['back_partition'].append({
+                        'box': box_num,
+                        'eggs': count
+                    })
+        else:
+            # For standard cage: 4 rows x 4 cols = 16 boxes
+            for box_num in range(1, 17):
+                count = back_data.get(box_num, 0) if isinstance(back_data, dict) else 0
+                cage_info['back_partition'].append({
+                    'box': box_num,
+                    'eggs': count
+                })
 
         cage_info['cage_total'] = sum(p['eggs'] for p in cage_info['front_partition']) + sum(p['eggs'] for p in cage_info['back_partition'])
         table_data['cages'].append(cage_info)
