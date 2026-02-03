@@ -266,35 +266,65 @@ def dashboard_overview(request):
         Q(chicken__cage__user=request.user) | Q(recorded_by=request.user)
     )
 
-    # Count eggs by source
-    cage_eggs_today = today_eggs.filter(source='cage').count()
-    shade_eggs_today = today_eggs.filter(source='shade').count()
-    total_eggs_today = cage_eggs_today + shade_eggs_today
+    # Count eggs by source - sum actual values from metadata, not record count
+    def count_eggs_from_metadata(eggs_queryset, source_filter=None):
+        """Sum all egg values from metadata JSON field"""
+        total = 0
+        for egg in eggs_queryset:
+            if egg.metadata:
+                # Metadata contains box values like {"1": 3, "2": 4, ...}
+                for box, count in egg.metadata.items():
+                    if isinstance(count, (int, float)):
+                        total += int(count)
+        return total
+
+    # Filter by source and count from metadata
+    cage_eggs_today = today_eggs.filter(source='cage')
+    shade_eggs_today = today_eggs.filter(source='shade')
+    
+    # Count actual eggs from metadata
+    cage_eggs_count = count_eggs_from_metadata(cage_eggs_today)
+    shade_eggs_count = count_eggs_from_metadata(shade_eggs_today)
+    total_eggs_today = cage_eggs_count + shade_eggs_count
 
     # Break down eggs by cage for detailed reporting
     cage_breakdown = {}
     for cage_id in [1, 2]:  # Standard farm has 2 cages
         cage_eggs = today_eggs.filter(cage_id=cage_id, source='cage')
-
-        # Count eggs in each partition (2 partitions: 0=front, 1=back)
-        front_eggs = cage_eggs.filter(partition_index=0).count()  # Front partition
-        back_eggs = cage_eggs.filter(partition_index=1).count()   # Back partition
-        total_cage_eggs = front_eggs + back_eggs
-
+        
+        # Sum eggs from metadata for each partition
+        front_total = 0
+        back_total = 0
+        for egg in cage_eggs:
+            if egg.metadata:
+                # Determine partition from metadata or use partition_index
+                partition_idx = getattr(egg, 'partition_index', 0)
+                for box, count in egg.metadata.items():
+                    if isinstance(count, (int, float)):
+                        if partition_idx == 0:
+                            front_total += int(count)
+                        else:
+                            back_total += int(count)
+        
+        total_cage_eggs = front_total + back_total
+        
         if total_cage_eggs > 0:
             cage_breakdown[cage_id] = {
                 'total': total_cage_eggs,
-                'front': front_eggs,
-                'back': back_eggs
+                'front': front_total,
+                'back': back_total
             }
 
-    # Weekly and monthly totals
-    total_eggs_week = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=today).filter(
+    # Weekly and monthly totals - sum from metadata
+    week_eggs = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=today).filter(
         Q(chicken__cage__user=request.user) | Q(recorded_by=request.user)
-    ).count()
-    total_eggs_month = Egg.objects.filter(laid_date__gte=month_start, laid_date__lte=today).filter(
+    )
+    month_eggs = Egg.objects.filter(laid_date__gte=month_start, laid_date__lte=today).filter(
         Q(chicken__cage__user=request.user) | Q(recorded_by=request.user)
-    ).count()
+    )
+    
+    total_eggs_week = count_eggs_from_metadata(week_eggs)
+    total_eggs_month = count_eggs_from_metadata(month_eggs)
 
     # Calculate averages
     days_this_month = (today - month_start).days + 1
