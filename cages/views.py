@@ -2128,26 +2128,34 @@ def notifications_list(request):
     except ValueError:
         limit = 50
     
-    queryset = Notification.objects.filter(user=user)
-    
-    if unread_only:
-        queryset = queryset.filter(is_read=False)
-    
-    # Get total count and unread count
-    total_count = queryset.count()
-    unread_count = queryset.filter(is_read=False).count()
-    
-    # Order by created_at descending and apply limit
-    notifications = queryset.order_by('-created_at')[:limit]
-    
-    data = {
-        'notifications': list(notifications.values(
-            'id', 'notification_type', 'title', 'message', 
-            'is_read', 'created_at', 'metadata'
-        )),
-        'total_count': total_count,
-        'unread_count': unread_count
-    }
+    try:
+        queryset = Notification.objects.filter(user=user)
+        
+        if unread_only:
+            queryset = queryset.filter(is_read=False)
+        
+        # Get total count and unread count
+        total_count = queryset.count()
+        unread_count = queryset.filter(is_read=False).count()
+        
+        # Order by created_at descending and apply limit
+        notifications = queryset.order_by('-created_at')[:limit]
+        
+        data = {
+            'notifications': list(notifications.values(
+                'id', 'notification_type', 'title', 'message', 
+                'is_read', 'created_at', 'metadata'
+            )),
+            'total_count': total_count,
+            'unread_count': unread_count
+        }
+    except Exception as e:
+        # Table might not exist yet (before migration runs)
+        data = {
+            'notifications': [],
+            'total_count': 0,
+            'unread_count': 0
+        }
     
     return Response(data)
 
@@ -2171,6 +2179,12 @@ def mark_notification_read(request, notification_id):
             {'detail': 'Notification not found'},
             status=status.HTTP_404_NOT_FOUND
         )
+    except Exception:
+        # Table might not exist yet
+        return Response(
+            {'detail': 'Notifications not available yet'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
 
 
 @api_view(['POST'])
@@ -2179,15 +2193,22 @@ def mark_all_notifications_read(request):
     """
     Mark all notifications as read for the current user.
     """
-    updated_count = Notification.objects.filter(
-        user=request.user, 
-        is_read=False
-    ).update(is_read=True)
-    
-    return Response({
-        'message': f'{updated_count} notifications marked as read',
-        'updated_count': updated_count
-    })
+    try:
+        updated_count = Notification.objects.filter(
+            user=request.user, 
+            is_read=False
+        ).update(is_read=True)
+        
+        return Response({
+            'message': f'{updated_count} notifications marked as read',
+            'updated_count': updated_count
+        })
+    except Exception:
+        # Table might not exist yet
+        return Response({
+            'message': 'Notifications not available yet',
+            'updated_count': 0
+        })
 
 
 @api_view(['GET'])
@@ -2196,12 +2217,16 @@ def unread_notification_count(request):
     """
     Get the count of unread notifications for the current user.
     """
-    unread_count = Notification.objects.filter(
-        user=request.user, 
-        is_read=False
-    ).count()
-    
-    return Response({'unread_count': unread_count})
+    try:
+        unread_count = Notification.objects.filter(
+            user=request.user, 
+            is_read=False
+        ).count()
+        
+        return Response({'unread_count': unread_count})
+    except Exception:
+        # Table might not exist yet
+        return Response({'unread_count': 0})
 
 
 def send_notification_to_owner(owner, notification_type, title, message, metadata=None):
@@ -2216,14 +2241,18 @@ def send_notification_to_owner(owner, notification_type, title, message, metadat
         metadata: Optional dict with additional data
     """
     if owner and owner.role == 'owner':
-        Notification.objects.create(
-            user=owner,
-            notification_type=notification_type,
-            title=title,
-            message=message,
-            metadata=metadata or {}
-        )
-        return True
+        try:
+            Notification.objects.create(
+                user=owner,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                metadata=metadata or {}
+            )
+            return True
+        except Exception:
+            # Table might not exist yet
+            return False
     return False
 
 
