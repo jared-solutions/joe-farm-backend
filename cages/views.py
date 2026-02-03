@@ -538,9 +538,18 @@ def egg_collection_table(request):
         user_cages = [1, 2]
 
     for cage_id in user_cages:
+        # Get cage type from database first
+        try:
+            cage_obj = Cage.objects.get(id=cage_id)
+            is_combined = cage_obj.type == 'combined'
+            cage_type = cage_obj.type
+        except Cage.DoesNotExist:
+            is_combined = (cage_id == 2)  # Assume cage 2 is combined
+            cage_type = 'standard'
+        
         cage_info = {
             'cage_id': cage_id,
-            'cage_type': cage_obj.type if cage_obj else 'standard',
+            'cage_type': cage_type,
             'front_partition': [],
             'back_partition': []
         }
@@ -549,13 +558,6 @@ def egg_collection_table(request):
         # Standard cage: 4 rows x 4 columns = 16 boxes total
         # Combined cage (cage_id=2): 4 rows x 8 columns = 32 boxes total
         # Data is stored with partition_index (0=front, 1=back)
-        
-        # Get cage type from database
-        try:
-            cage_obj = Cage.objects.get(id=cage_id)
-            is_combined = cage_obj.type == 'combined'
-        except Cage.DoesNotExist:
-            is_combined = (cage_id == 2)  # Assume cage 2 is combined
         
         boxes_per_partition = 32 if is_combined else 16
         
