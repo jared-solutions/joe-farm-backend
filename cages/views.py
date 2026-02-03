@@ -279,13 +279,13 @@ def dashboard_overview(request):
         return total
 
     # Filter by source and count from metadata
-    cage_eggs_today = today_eggs.filter(source='cage')
-    shade_eggs_today = today_eggs.filter(source='shade')
+    cage_eggs_qs = today_eggs.filter(source='cage')
+    shade_eggs_qs = today_eggs.filter(source='shade')
     
-    # Count actual eggs from metadata
-    cage_eggs_count = count_eggs_from_metadata(cage_eggs_today)
-    shade_eggs_count = count_eggs_from_metadata(shade_eggs_today)
-    total_eggs_today = cage_eggs_count + shade_eggs_count
+    # Count actual eggs from metadata (these are integers for response)
+    cage_eggs_today = count_eggs_from_metadata(cage_eggs_qs)
+    shade_eggs_today = count_eggs_from_metadata(shade_eggs_qs)
+    total_eggs_today = cage_eggs_today + shade_eggs_today
 
     # Break down eggs by cage for detailed reporting
     cage_breakdown = {}
