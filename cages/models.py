@@ -42,6 +42,7 @@ class Egg(models.Model):
     box_number = models.IntegerField(null=True, blank=True)  # Store box number (1-4 or 1-8 depending on cage type)
     recorded_by = models.ForeignKey('authentication.User', on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    metadata = models.JSONField(blank=True, default=dict)  # Store additional data like egg count
 
     def __str__(self):
         if self.chicken:
