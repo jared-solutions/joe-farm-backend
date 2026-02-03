@@ -5,7 +5,6 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db.models import Sum, Count, Avg, Q, Case, When, IntegerField
-from django.db.models.functions import Cast, KeyTextTransform
 from datetime import datetime, timedelta
 from django.http import HttpResponse
 from reportlab.pdfgen import canvas
@@ -833,27 +832,19 @@ def financial_summary(request):
 
     # Get current metrics from database
     # Count all eggs for today (cage eggs + shade eggs) with metadata support
-    eggs_today = Egg.objects.filter(laid_date=today).aggregate(
-        total=Sum(
-            Case(
-                When(metadata__isnull=False, then=Cast(KeyTextTransform('egg_count', 'metadata'), output_field=IntegerField())),
-                default=1,
-                output_field=IntegerField()
-            )
-        )
-    )['total'] or 0
+    eggs_today_list = Egg.objects.filter(laid_date=today)
+    eggs_today = sum(
+        egg.metadata.get('egg_count', 1) if egg.metadata and isinstance(egg.metadata, dict) else 1
+        for egg in eggs_today_list
+    )
     store, created = Store.objects.get_or_create(id=1, defaults={'trays_in_stock': 0})
 
     # Calculate feed efficiency (eggs per kg of feed)
-    weekly_eggs = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=week_end).aggregate(
-        total=Sum(
-            Case(
-                When(metadata__isnull=False, then=Cast(KeyTextTransform('egg_count', 'metadata'), output_field=IntegerField())),
-                default=1,
-                output_field=IntegerField()
-            )
-        )
-    )['total'] or 0
+    weekly_eggs_list = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=week_end)
+    weekly_eggs = sum(
+        egg.metadata.get('egg_count', 1) if egg.metadata and isinstance(egg.metadata, dict) else 1
+        for egg in weekly_eggs_list
+    )
     feed_efficiency = weekly_eggs / total_feed_used_kg if total_feed_used_kg > 0 else 0
 
     # Calculate avg eggs per hen
