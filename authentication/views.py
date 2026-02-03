@@ -27,12 +27,21 @@ def register(request):
             user.is_approved = False
             user.save()
             
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({
-            'user': UserSerializer(user).data,
-            'token': token.key,
-            'message': 'Registration successful! Waiting for owner approval.' if not user.is_approved else 'Welcome, Owner!'
-        }, status=status.HTTP_201_CREATED)
+        # Only generate token for approved users
+        if user.is_approved:
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'user': UserSerializer(user).data,
+                'token': token.key,
+                'message': 'Welcome, Owner!'
+            }, status=status.HTTP_201_CREATED)
+        else:
+            # Delete token if it was created (shouldn't happen but just in case)
+            Token.objects.filter(user=user).delete()
+            return Response({
+                'user': UserSerializer(user).data,
+                'message': 'Registration successful! Waiting for owner approval.'
+            }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
