@@ -544,6 +544,7 @@ def egg_collection_table(request):
     for cage_id in user_cages:
         cage_info = {
             'cage_id': cage_id,
+            'cage_type': cage_obj.type if cage_obj else 'standard',
             'front_partition': [],
             'back_partition': []
         }
