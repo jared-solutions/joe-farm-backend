@@ -4,7 +4,8 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from django.db.models import Sum, Count, Avg, Q
+from django.db.models import Sum, Count, Avg, Q, Case, When, IntegerField
+from django.db.models.functions import Cast, KeyTextTransform
 from datetime import datetime, timedelta
 from django.http import HttpResponse
 from reportlab.pdfgen import canvas
@@ -114,14 +115,16 @@ class EggViewSet(viewsets.ModelViewSet):
 
             total_eggs_collected = shade_eggs
 
-            # Process shade eggs
-            for i in range(shade_eggs):
+            # Process shade eggs - create ONE record with count stored in metadata
+            if shade_eggs > 0:
                 Egg.objects.create(
                     chicken=None,  # Shade eggs aren't tied to specific chickens
                     laid_date=collection_date,
                     weight_g=0.0,  # Weight measured separately if needed
                     quality='Good',  # Assumed good quality for shade eggs
-                    source='shade'
+                    source='shade',
+                    recorded_by=request.user,
+                    metadata={'egg_count': shade_eggs}  # Store count in metadata
                 )
 
             # Process each cage
@@ -471,30 +474,11 @@ def egg_collection_table(request):
     chicken_setting = FarmSettings.objects.filter(key='total_chickens').first()
     total_chickens = int(chicken_setting.value) if chicken_setting else Chicken.objects.filter(cage__user=request.user).count()
 
-    total_eggs_today = eggs.count()
-    laying_percentage = (total_eggs_today / total_chickens * 100) if total_chickens > 0 else 0
-
-    # Generate automatic performance comments based on laying percentage
-    if laying_percentage >= 90:
-        performance_comment = "Excellent laying performance! Flock is performing exceptionally well."
-    elif laying_percentage >= 80:
-        performance_comment = "Very good production. Flock health and feed quality are optimal."
-    elif laying_percentage >= 70:
-        performance_comment = "Good laying percentage. Monitor feed quality and health."
-    elif laying_percentage >= 60:
-        performance_comment = "Average production. Consider reviewing feed and health management."
-    elif laying_percentage >= 50:
-        performance_comment = "Below average production. Check for health issues or feed problems."
-    elif laying_percentage >= 30:
-        performance_comment = "Poor laying performance. Immediate attention to flock health required."
-    else:
-        performance_comment = "Critical: Very low production. Urgent veterinary attention needed."
-
-    # Calculate laying percentage and performance comments
-    chicken_setting = FarmSettings.objects.filter(key='total_chickens').first()
-    total_chickens = int(chicken_setting.value) if chicken_setting else Chicken.objects.filter(cage__user=request.user).count()
-
-    total_eggs_today = eggs.count()
+    # Calculate total eggs from metadata for accurate laying percentage
+    total_eggs_today = sum(
+        egg.metadata.get('egg_count', 1) if egg.metadata and isinstance(egg.metadata, dict) else 1
+        for egg in eggs
+    )
     laying_percentage = (total_eggs_today / total_chickens * 100) if total_chickens > 0 else 0
 
     # Generate automatic performance comments based on laying percentage
@@ -515,11 +499,19 @@ def egg_collection_table(request):
 
     # Organize eggs by cage, partition, and box for the collection table
     cage_data = {}
-    shade_eggs = 0
+    shade_eggs_count = 0
+    grand_total = 0
 
     for egg in eggs:
+        # Read count from metadata (new format) or count records (old format)
+        egg_count = 1
+        if egg.metadata and isinstance(egg.metadata, dict) and 'egg_count' in egg.metadata:
+            egg_count = egg.metadata['egg_count']
+        
+        grand_total += egg_count
+        
         if egg.source == 'shade':
-            shade_eggs += 1
+            shade_eggs_count += egg_count
         elif egg.cage_id is not None and egg.box_number is not None:
             cage_id = egg.cage_id
             partition = egg.partition_index or 0
@@ -530,11 +522,6 @@ def egg_collection_table(request):
 
             if partition not in cage_data[cage_id]:
                 cage_data[cage_id][partition] = {}
-
-            # Read count from metadata (new format) or count records (old format)
-            egg_count = 1
-            if egg.metadata and isinstance(egg.metadata, dict) and 'egg_count' in egg.metadata:
-                egg_count = egg.metadata['egg_count']
             
             cage_data[cage_id][partition][box] = egg_count
 
@@ -542,8 +529,8 @@ def egg_collection_table(request):
     table_data = {
         'date': collection_date.isoformat(),
         'cages': [],
-        'shade_total': shade_eggs,
-        'grand_total': len(eggs),
+        'shade_total': shade_eggs_count,
+        'grand_total': grand_total,
         'laying_percentage': round(laying_percentage, 2),
         'performance_comment': performance_comment
     }
@@ -845,11 +832,28 @@ def financial_summary(request):
     profit_margin = (profit_loss / total_revenue * 100) if total_revenue > 0 else 0
 
     # Get current metrics from database
-    eggs_today = Egg.objects.filter(laid_date=today, chicken__cage__user=request.user).count()
+    # Count all eggs for today (cage eggs + shade eggs) with metadata support
+    eggs_today = Egg.objects.filter(laid_date=today).aggregate(
+        total=Sum(
+            Case(
+                When(metadata__isnull=False, then=Cast(KeyTextTransform('egg_count', 'metadata'), output_field=IntegerField())),
+                default=1,
+                output_field=IntegerField()
+            )
+        )
+    )['total'] or 0
     store, created = Store.objects.get_or_create(id=1, defaults={'trays_in_stock': 0})
 
     # Calculate feed efficiency (eggs per kg of feed)
-    weekly_eggs = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=week_end).count()
+    weekly_eggs = Egg.objects.filter(laid_date__gte=week_start, laid_date__lte=week_end).aggregate(
+        total=Sum(
+            Case(
+                When(metadata__isnull=False, then=Cast(KeyTextTransform('egg_count', 'metadata'), output_field=IntegerField())),
+                default=1,
+                output_field=IntegerField()
+            )
+        )
+    )['total'] or 0
     feed_efficiency = weekly_eggs / total_feed_used_kg if total_feed_used_kg > 0 else 0
 
     # Calculate avg eggs per hen
